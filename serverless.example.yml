@@ -1,0 +1,101 @@
+# serverless.example.yml - Secure Template
+
+service: subscription-service
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-2
+  environment:
+    TABLE_NAME: YourTableName
+    SES_EMAIL: your-verified-email@example.com
+  deploymentBucket:
+    name: your-deployment-bucket-name
+  iam:
+    role:
+      statements:
+        # DynamoDB Permissions
+        - Effect: Allow
+          Action:
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+          Resource:
+            - "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:provider.environment.TABLE_NAME}"
+            - "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${self:provider.environment.TABLE_NAME}/index/*"
+
+        # SES Email Permissions
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource: "*"
+          Condition:
+            StringEquals:
+              "ses:FromAddress": ${self:provider.environment.SES_EMAIL}
+
+        # CloudWatch Monitoring Permissions
+        - Effect: Allow
+          Action:
+            - cloudwatch:PutMetricData
+          Resource: "*"
+
+package:
+  individually: true
+  patterns:
+    - "!**" # Exclude all files by default
+
+functions:
+  # Subscription Webhook Handler
+  handlerSubscription:
+    handler: handlers/handlerSubscription.handler
+    package:
+      patterns:
+        - "handlers/handlerSubscription.js"
+    events:
+      - http:
+          path: /subscriptions
+          method: post
+          cors: true
+
+  # Scheduled Expiration Checker
+  checkExpirations:
+    handler: handlers/checkExpirations.handler
+    package:
+      patterns:
+        - "handlers/checkExpirations.js"
+    events:
+      - schedule:
+          rate: cron(0 10 * * ? *) # Daily at 10:00 UTC
+          enabled: true
+
+resources:
+  Resources:
+    # DynamoDB Table Configuration
+    SubscriptionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.TABLE_NAME}
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: subscriptionId
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+          - AttributeName: endDate
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: subscriptionId
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+        GlobalSecondaryIndexes:
+          - IndexName: status-endDate-index
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+              - AttributeName: endDate
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
