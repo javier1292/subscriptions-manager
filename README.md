@@ -39,7 +39,7 @@ flowchart TD
     end
 
     subgraph "Scheduled Flow"
-        E[⏰ EventBridge\nCron: 0 10 * * ? *] -->|Triggers| F[λ Lambda\ncheckExpirations]
+        E[⏰ EventBridge\nCron: 0 10 * * *] -->|Triggers| F[λ Lambda\ncheckExpirations]
         F -->|Query| D
         F -->|Send Notification| G[✉️ SES/SMS]
         end
